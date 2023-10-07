@@ -5,13 +5,17 @@
 
 void des_encrypt(const unsigned char *key, const char *plaintext, char *ciphertext) {
     DES_key_schedule keysched;
-    DES_set_key_unchecked((const_DES_cblock *)key, &keysched);
+    DES_cblock des_key;
+    DES_string_to_key((const char *)key, &des_key);
+    DES_set_key_unchecked(&des_key, &keysched);
     DES_ecb_encrypt((const_DES_cblock *)plaintext, (DES_cblock *)ciphertext, &keysched, DES_ENCRYPT);
 }
 
 void des_decrypt(const unsigned char *key, const char *ciphertext, char *plaintext) {
     DES_key_schedule keysched;
-    DES_set_key_unchecked((const_DES_cblock *)key, &keysched);
+    DES_cblock des_key;
+    DES_string_to_key((const char *)key, &des_key);
+    DES_set_key_unchecked(&des_key, &keysched);
     DES_ecb_encrypt((const_DES_cblock *)ciphertext, (DES_cblock *)plaintext, &keysched, DES_DECRYPT);
 }
 
@@ -50,21 +54,17 @@ void bruteforce(const char *ciphertext, const char *known_substring, int key_len
 }
 
 int main() {
-    unsigned char key[1] = {123};
+    unsigned char key[3] = {123, 0 , 0};
     const char *plaintext = "HOLA";
-    const char *known_substring = "HO";
+    const char *known_substring = "LA";
     char ciphertext[64];
 
     des_encrypt(key, plaintext, ciphertext);
     clock_t start_time = clock();
-    bruteforce(ciphertext, known_substring, 1, 1000000000);
+    bruteforce(ciphertext, known_substring, 3, 1000000000);
     clock_t end_time = clock();
     double time_taken = double(end_time - start_time) / CLOCKS_PER_SEC;
     std::cout << "\nTiempo tomado para encontrar la llave: " << time_taken << " segundos" << std::endl;
 
     return 0;
 }
-
-
-
-
