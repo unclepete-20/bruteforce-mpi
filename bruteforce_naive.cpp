@@ -4,6 +4,8 @@
 #include <ctime>
 #include <fstream>
 #include <cstdlib>
+#include <cstdio>
+#include <string>
 #include <mpi.h>
 
 void des_encrypt(const unsigned char *key, const char *plaintext, char *ciphertext) {
@@ -76,16 +78,17 @@ int main(int argc, char *argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
     MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
 
-    if (argc != 2) {
+    if (argc != 3) {
         if (id == 0) {
-            std::cerr << "Uso: " << argv[0] << " <archivo.txt>" << std::endl;
+            std::cerr << "Uso: " << argv[0] << " <archivo.txt> <llave_privada>" << std::endl;
         }
         MPI_Finalize();
         return 1;
     }
 
-    unsigned char key[4] = {123, 0, 0, 0};
-    const char *known_substring = "123";
+    // Obtener la llave privada desde los argumentos de la línea de comandos como cadena
+    std::string llave_privada_str = argv[2];
+    const char *known_substring = "es una prueba de";
     char ciphertext[64];
 
     // Leer el texto desde el archivo (solo el proceso 0 lo hace)
@@ -100,8 +103,11 @@ int main(int argc, char *argv[]) {
         std::string plaintext;
         getline(inputFile, plaintext);
 
+        // Convertir la llave privada a un número largo
+        uint64_t llave_privada = std::stoull(llave_privada_str);
+
         // Cifrar el texto leído desde el archivo
-        des_encrypt(key, plaintext.c_str(), ciphertext);
+        des_encrypt(reinterpret_cast<const unsigned char *>(&llave_privada), plaintext.c_str(), ciphertext);
 
         // Mostrar el texto cifrado
         std::cout << "Texto cifrado: " << ciphertext << std::endl;
@@ -112,10 +118,10 @@ int main(int argc, char *argv[]) {
 
     // Realizar el ataque de fuerza bruta para encontrar la clave
     clock_t start_time = clock();
-    bruteforce(ciphertext, known_substring, 4, 1000000000, id, num_procs);
+    bruteforce(ciphertext, known_substring, 8, 1000000000, id, num_procs); // Cambiado a 8 bytes para manejar números largos
     clock_t end_time = clock();
     double time_taken = double(end_time - start_time) / CLOCKS_PER_SEC;
-    
+
     if (id == 0) {
         std::cout << "\nTiempo tomado para encontrar la llave: " << time_taken << " segundos" << std::endl;
     }
