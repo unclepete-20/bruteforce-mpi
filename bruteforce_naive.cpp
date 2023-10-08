@@ -11,16 +11,14 @@
 void des_encrypt(const unsigned char *key, const char *plaintext, char *ciphertext) {
     DES_key_schedule keysched;
     DES_cblock des_key;
-    DES_string_to_key((const char *)key, &des_key);
-    DES_set_key_unchecked(&des_key, &keysched);
+    DES_set_key_unchecked(key, &keysched); // Utiliza la misma clave aquí
     DES_ecb_encrypt((const_DES_cblock *)plaintext, (DES_cblock *)ciphertext, &keysched, DES_ENCRYPT);
 }
 
 void des_decrypt(const unsigned char *key, const char *ciphertext, char *plaintext) {
     DES_key_schedule keysched;
     DES_cblock des_key;
-    DES_string_to_key((const char *)key, &des_key);
-    DES_set_key_unchecked(&des_key, &keysched);
+    DES_set_key_unchecked(key, &keysched); // Utiliza la misma clave aquí
     DES_ecb_encrypt((const_DES_cblock *)ciphertext, (DES_cblock *)plaintext, &keysched, DES_DECRYPT);
 }
 
@@ -33,8 +31,7 @@ void increment_key(unsigned char key[], int key_length) {
     }
 }
 
-void bruteforce(const char *ciphertext, const char *known_substring, int key_length, uint64_t max_tries, int id, int num_procs) {
-    unsigned char key[key_length] = {0};
+void bruteforce(const char *ciphertext, const char *known_substring, int key_length, uint64_t max_tries, int id, int num_procs, const unsigned char *key) { // Pasa la misma clave aquí
     char decryptedtext[64];
 
     uint64_t range_per_node = max_tries / num_procs;
@@ -105,20 +102,27 @@ int main(int argc, char *argv[]) {
 
         // Convertir la llave privada a un número largo
         uint64_t llave_privada = std::stoull(llave_privada_str);
+        unsigned char key[8] = {0}; // Cambiado a 8 bytes para manejar números largos
+        for (int i = 0; i < 8; i++) {
+            key[i] = (llave_privada >> (i * 8)) & 0xFF;
+        }
 
         // Cifrar el texto leído desde el archivo
-        des_encrypt(reinterpret_cast<const unsigned char *>(&llave_privada), plaintext.c_str(), ciphertext);
+        des_encrypt(key, plaintext.c_str(), ciphertext);
 
         // Mostrar el texto cifrado
         std::cout << "Texto cifrado: " << ciphertext << std::endl;
-    }
 
-    // Broadcast el texto cifrado desde el proceso 0 a todos los demás
-    MPI_Bcast(ciphertext, 64, MPI_CHAR, 0, MPI_COMM_WORLD);
+        // Broadcast la clave a todos los demás procesos
+        MPI_Bcast(key, 8, MPI_CHAR, 0, MPI_COMM_WORLD);
+    } else {
+        unsigned char key[8]; // Recibir la clave de otros procesos
+        MPI_Bcast(key, 8, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
 
     // Realizar el ataque de fuerza bruta para encontrar la clave
     clock_t start_time = clock();
-    bruteforce(ciphertext, known_substring, 8, 1000000000, id, num_procs); // Cambiado a 8 bytes para manejar números largos
+    bruteforce(ciphertext, known_substring, 8, 1000000000, id, num_procs, key); // Cambiado a 8 bytes para manejar números largos
     clock_t end_time = clock();
     double time_taken = double(end_time - start_time) / CLOCKS_PER_SEC;
 
