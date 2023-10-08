@@ -2,6 +2,9 @@
 #include <openssl/des.h>
 #include <cstring>
 #include <ctime>
+#include <fstream>
+#include <cstdlib>
+#include <mpi.h>
 
 void des_encrypt(const unsigned char *key, const char *plaintext, char *ciphertext) {
     DES_key_schedule keysched;
@@ -28,43 +31,95 @@ void increment_key(unsigned char key[], int key_length) {
     }
 }
 
-void bruteforce(const char *ciphertext, const char *known_substring, int key_length, uint64_t max_tries) {
+void bruteforce(const char *ciphertext, const char *known_substring, int key_length, uint64_t max_tries, int id, int num_procs) {
     unsigned char key[key_length] = {0};
     char decryptedtext[64];
 
-    for (uint64_t i = 0; i < max_tries; i++) {
-        des_decrypt(key, ciphertext, decryptedtext);
-        std::cout << "Llave Probada: ";
-        for (int j = 0; j < key_length; j++) {
-            std::cout << (int)key[j] << " ";
-        }
-        std::cout << " - Texto Descifrado: " << decryptedtext << std::endl;
+    uint64_t range_per_node = max_tries / num_procs;
+    uint64_t mylower = range_per_node * id;
+    uint64_t myupper = range_per_node * (id + 1);
 
+    for (uint64_t i = mylower; i < myupper; i++) {
+        des_decrypt(key, ciphertext, decryptedtext);
         if (strstr(decryptedtext, known_substring) != nullptr) {
-            std::cout << "\nLlave encontrada: ";
+            std::cout << "Llave encontrada por proceso " << id << ": ";
             for (int j = 0; j < key_length; j++) {
                 std::cout << (int)key[j] << " ";
             }
             std::cout << std::endl;
             std::cout << "Texto descifrado: " << decryptedtext << std::endl;
+
+            // Enviar un mensaje a los demás procesos para detener la búsqueda
+            for (int proc = 0; proc < num_procs; proc++) {
+                if (proc != id) {
+                    MPI_Send(NULL, 0, MPI_INT, proc, 0, MPI_COMM_WORLD);
+                }
+            }
             break;
         }
         increment_key(key, key_length);
+
+        // Verificar si se recibió un mensaje de detención
+        MPI_Status status;
+        int stop_signal;
+        MPI_Iprobe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &stop_signal, &status);
+        if (stop_signal) {
+            break;
+        }
     }
 }
 
-int main() {
-    unsigned char key[3] = {123, 0 , 0};
-    const char *plaintext = "HOLA";
-    const char *known_substring = "LA";
+int main(int argc, char *argv[]) {
+    MPI_Init(&argc, &argv);
+
+    int id, num_procs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
+    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+    if (argc != 2) {
+        if (id == 0) {
+            std::cerr << "Uso: " << argv[0] << " <archivo.txt>" << std::endl;
+        }
+        MPI_Finalize();
+        return 1;
+    }
+
+    unsigned char key[4] = {123, 0, 0, 0};
+    const char *known_substring = "123";
     char ciphertext[64];
 
-    des_encrypt(key, plaintext, ciphertext);
+    // Leer el texto desde el archivo (solo el proceso 0 lo hace)
+    if (id == 0) {
+        std::ifstream inputFile(argv[1]);
+        if (!inputFile) {
+            std::cerr << "No se pudo abrir el archivo de entrada." << std::endl;
+            MPI_Finalize();
+            return 1;
+        }
+
+        std::string plaintext;
+        getline(inputFile, plaintext);
+
+        // Cifrar el texto leído desde el archivo
+        des_encrypt(key, plaintext.c_str(), ciphertext);
+
+        // Mostrar el texto cifrado
+        std::cout << "Texto cifrado: " << ciphertext << std::endl;
+    }
+
+    // Broadcast el texto cifrado desde el proceso 0 a todos los demás
+    MPI_Bcast(ciphertext, 64, MPI_CHAR, 0, MPI_COMM_WORLD);
+
+    // Realizar el ataque de fuerza bruta para encontrar la clave
     clock_t start_time = clock();
-    bruteforce(ciphertext, known_substring, 3, 1000000000);
+    bruteforce(ciphertext, known_substring, 4, 1000000000, id, num_procs);
     clock_t end_time = clock();
     double time_taken = double(end_time - start_time) / CLOCKS_PER_SEC;
-    std::cout << "\nTiempo tomado para encontrar la llave: " << time_taken << " segundos" << std::endl;
+    
+    if (id == 0) {
+        std::cout << "\nTiempo tomado para encontrar la llave: " << time_taken << " segundos" << std::endl;
+    }
 
+    MPI_Finalize();
     return 0;
 }
