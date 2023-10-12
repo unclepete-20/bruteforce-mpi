@@ -7,7 +7,7 @@
 
 void des_encrypt(const unsigned char *key, const char *plaintext, char *ciphertext) {
     std::cout << "Clave en des_encrypt: ";
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 64; i++) {
         std::cout << (int)key[i] << " ";
     }
     std::cout << std::endl;
@@ -15,18 +15,18 @@ void des_encrypt(const unsigned char *key, const char *plaintext, char *cipherte
     std::cout << "Texto plano en des_encrypt: " << plaintext << std::endl;
     DES_key_schedule keysched;
     DES_cblock des_key;
-    memcpy(des_key, key, 64);
+    memcpy(des_key, key, 8);
     // DES_string_to_key((const char *)key, &des_key);
-    DES_set_key_unchecked(&des_key, &keysched);
-    std::cout << "Clave después de la configuración: ";
-    for (int i = 0; i < 8; i++) {
+    std::cout << "des_key antes de la configuración: ";
+    for (int i = 0; i < 64; i++) {
         std::cout << (int)des_key[i] << " ";
     }
     std::cout << std::endl;
+    DES_set_key_unchecked(&des_key, &keysched);
 
-    std::cout << "keysched antes de la encriptación: ";
-    for (int i = 0; i < 16; i++) {
-        std::cout << (int)keysched[i] << " ";
+    std::cout << "des_key despues de la encriptación: ";
+    for (int i = 0; i < 64; i++) {
+        std::cout << (int)des_key[i] << " ";
     }
     std::cout << std::endl;
 
@@ -35,7 +35,8 @@ void des_encrypt(const unsigned char *key, const char *plaintext, char *cipherte
 }
 
 void des_decrypt(const unsigned char *key, const char *ciphertext, char *plaintext) {
-    // for (int i = 0; i < 8; i++) {
+    // std::cout << "Clave en des_decrypt: ";
+    // for (int i = 0; i < 64; i++) {
     //     std::cout << (int)key[i] << " ";
     // }
     // std::cout << std::endl;
@@ -44,7 +45,7 @@ void des_decrypt(const unsigned char *key, const char *ciphertext, char *plainte
     // std::cout << "ciphertext en des_decrypt: " << ciphertext << std::endl;
     DES_key_schedule keysched;
     DES_cblock des_key;
-    memcpy(des_key, key, 64);
+    memcpy(des_key, key, 8);
     // DES_string_to_key((const char *)key, &des_key);
     DES_set_key_unchecked(&des_key, &keysched);
     // std::cout << "Clave después de la configuración: ";
@@ -122,8 +123,8 @@ int main(int argc, char *argv[]) {
 
     const char *filename = argv[1];
     const char *private_key = argv[2];
-    int key_length = strlen(private_key);
-    // int key_length = 8;
+    // int key_length = strlen(private_key);
+    int key_length = 8;
 
     std::ifstream file(filename);
     if (!file.is_open()) {
