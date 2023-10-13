@@ -1,7 +1,14 @@
 # bruteforce-mpi
 
+## bruteforce_naice.cpp
 compilar
-mpic++ -o bruteforce_naive bruteforce_naive.cpp -lcrypto
+g++ -o bruteforce_naive bruteforce_naive.cpp -lssl -lcrypto
 
 correr
-mpirun -np 4 ./bruteforce_naive ./text <Llave_privada>
+./bruteforce_naive
+# bruteforce_naice_mpi.cpp
+compilar
+mpic++ -o bruteforce_mpi bruteforce_naive_mpi.cpp -lcrypto
+
+correr
+mpirun -np 4 ./bruteforce_mpi ./text <Llave_privada>
