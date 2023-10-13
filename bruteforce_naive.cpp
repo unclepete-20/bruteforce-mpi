@@ -1,121 +1,79 @@
 #include <iostream>
 #include <fstream>
-#include <openssl/des.h>
 #include <cstring>
-#include <ctime>
+#include <openssl/des.h>
+#include <openssl/sha.h>
 #include <mpi.h>
 
-void des_encrypt(const unsigned char *key, const char *plaintext, char *ciphertext) {
-    std::cout << "Clave en des_encrypt: ";
-    for (int i = 0; i < 64; i++) {
-        std::cout << (int)key[i] << " ";
-    }
-    std::cout << std::endl;
-
-    std::cout << "Texto plano en des_encrypt: " << plaintext << std::endl;
+void des_encrypt(const DES_cblock &key, const char *plaintext, char *ciphertext) {
     DES_key_schedule keysched;
-    DES_cblock des_key;
-    memcpy(des_key, key, 8);
-    // DES_string_to_key((const char *)key, &des_key);
-    std::cout << "des_key antes de la configuración: ";
-    for (int i = 0; i < 64; i++) {
-        std::cout << (int)des_key[i] << " ";
-    }
-    std::cout << std::endl;
-    DES_set_key_unchecked(&des_key, &keysched);
-
-    std::cout << "des_key despues de la encriptación: ";
-    for (int i = 0; i < 64; i++) {
-        std::cout << (int)des_key[i] << " ";
-    }
-    std::cout << std::endl;
-
-    
+    DES_set_key_unchecked((const_DES_cblock *)&key, &keysched);
     DES_ecb_encrypt((const_DES_cblock *)plaintext, (DES_cblock *)ciphertext, &keysched, DES_ENCRYPT);
 }
 
-void des_decrypt(const unsigned char *key, const char *ciphertext, char *plaintext) {
-    // std::cout << "Clave en des_decrypt: ";
-    // for (int i = 0; i < 64; i++) {
-    //     std::cout << (int)key[i] << " ";
-    // }
-    // std::cout << std::endl;
-
-    // std::cout << "Texto plano en des_decrypt: " << plaintext << std::endl;
-    // std::cout << "ciphertext en des_decrypt: " << ciphertext << std::endl;
+void des_decrypt(const DES_cblock &key, const char *ciphertext, char *plaintext) {
     DES_key_schedule keysched;
-    DES_cblock des_key;
-    memcpy(des_key, key, 8);
-    // DES_string_to_key((const char *)key, &des_key);
-    DES_set_key_unchecked(&des_key, &keysched);
-    // std::cout << "Clave después de la configuración: ";
-    // for (int i = 0; i < 8; i++) {
-    //     std::cout << (int)des_key[i] << " ";
-    // }
-    // std::cout << std::endl;
+    DES_set_key_unchecked((const_DES_cblock *)&key, &keysched);
     DES_ecb_encrypt((const_DES_cblock *)ciphertext, (DES_cblock *)plaintext, &keysched, DES_DECRYPT);
-    // std::cout << "ciphertext en des_decrypt final: " << ciphertext << std::endl;
 }
 
-void increment_key(unsigned char key[], int key_length, uint64_t increment) {
-    uint64_t carry = increment;
-    for (int i = key_length - 1; i >= 0 && carry > 0; i--) {
-        carry += key[i];
-        key[i] = carry & 0xFF;
-        carry >>= 8;
+void increment_key(DES_cblock &key) {
+    // Incrementar la clave como desees, aquí se usa una simple suma
+    for (int i = 0; i < 8; i++) {
+        key[i]++;
+        if (key[i] != 0) break;  // Verificar el desbordamiento
     }
 }
 
-
-void bruteforce(const char *ciphertext, const char *known_substring, int key_length, int rank, int size, bool &found, uint64_t start, uint64_t end) {
+void bruteforce(const char *ciphertext, const char *known_substring, int rank, int size, bool &found) {
+    DES_cblock key = {0};
     char decryptedtext[8];
-    unsigned char key[key_length+1];
 
-    // std::cout << "Ciphertext recibido en bruteforce: " << ciphertext << std::endl;
+    uint64_t max_tries = 1ULL << 56;
+    uint64_t keys_per_process = max_tries / size;
+    uint64_t start = rank * keys_per_process;
+    uint64_t end = (rank == size - 1) ? max_tries : (rank + 1) * keys_per_process;
 
-    
-    // std::cout << "Proceso " << rank << ": probará desde la llave " << start << " al " << end - 1 << std::endl;
+    double start_time = MPI_Wtime();
 
-    uint64_t step = size;  // Este es el paso (stride) entre las claves probadas
+    for (uint64_t i = 0; i < start; i++) {
+        increment_key(key);
+    }
 
-    for (uint64_t i = start; i < end && !found; i ++) {
-        // Genera la clave como una cadena de caracteres
-        char key_str[key_length];
-        snprintf(key_str, key_length + 1, "%0*llu", key_length, i);
-        // std::cout << "Key_str antes de copia en brutefoce: " << key_str << std::endl;
-
-        // Copia la clave generada al array 'key' para desencriptar
-        strncpy((char *)key, key_str, key_length);
-
-        // std::cout << "Key después de strncpy en bruteforce: ";
-        // for (int i = 0; i < key_length; i++) {
-        //     std::cout << (int)key[i] << " ";
-        // }
-        // std::cout << std::endl;
-    
+    for (uint64_t i = start; i < end && !found; i++) {
         des_decrypt(key, ciphertext, decryptedtext);
-        // std::cout << "known_substring en bruteforce: " << known_substring << std::endl;
-        // std::cout << "Texto en proceso descifrado en bruteforce: " << decryptedtext << std::endl;
+
         if (strstr(decryptedtext, known_substring) != nullptr) {
-            std::cout << "\nLlave encontrada por proceso " << rank << ": " << key_str << std::endl;
-            std::cout << "Texto descifrado: " << decryptedtext << std::endl;
+            double end_time = MPI_Wtime();
+            double elapsed_time = end_time - start_time;
+
+            std::cout << "Proceso " << rank << " encontró la clave" << std::endl;
+            std::cout << "Mensaje desencriptado: " << decryptedtext << std::endl;
+            std::cout << "Clave utilizada: ";
+            for (int j = 0; j < 8; j++) {
+                std::cout << std::hex << (int)key[j];
+            }
+            std::cout << std::dec << std::endl;
+            std::cout << "Tiempo transcurrido: " << elapsed_time << " segundos" << std::endl;
+
             found = true;
             break;
         }
+
+        increment_key(key);
     }
 }
-
 
 int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
-    const char *known_substring = "una";
+    const char *known_substring = "es una prueba de";
 
     if (argc != 3) {
         if (rank == 0) {
-            std::cout << "Uso: mpirun -np 4 ./bruteforce_naive <.txt_file> <private_key>" << std::endl;
+            std::cout << "Uso: mpirun -np 4 ./bruteforce <.txt_file> <private_key>" << std::endl;
         }
         MPI_Finalize();
         return 1;
@@ -123,8 +81,6 @@ int main(int argc, char *argv[]) {
 
     const char *filename = argv[1];
     const char *private_key = argv[2];
-    // int key_length = strlen(private_key);
-    int key_length = 8;
 
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -141,43 +97,24 @@ int main(int argc, char *argv[]) {
         plaintext += line + "\n";
     }
 
-    std::cout << "Valor de private_key: " << private_key << std::endl;
-    std::cout << "Plaintext antes de encriptar: " << plaintext << std::endl;
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, private_key, strlen(private_key));
 
-    unsigned char key[key_length];
-    strncpy((char *)key, private_key, key_length);
-    std::cout << "Key después de strncpy: ";
-    for (int i = 0; i < key_length; i++) {
-        std::cout << (int)key[i] << " ";
-    }
-    std::cout << std::endl;
+    DES_cblock key;
+    unsigned char digest[SHA256_DIGEST_LENGTH];
+    SHA256_Final(digest, &sha256);
+
+    // Copiar los primeros 8 bytes del resumen SHA-256 a la clave DES
+    memcpy(key, digest, 8);
 
     char ciphertext[8];
-    if (rank == 0) {
-        des_encrypt(key, plaintext.c_str(), ciphertext);
-        // std::cout << "Ciphertext después de encriptar: " << ciphertext << std::endl;
-    }
-    MPI_Bcast(ciphertext, 8, MPI_CHAR, 0, MPI_COMM_WORLD);
-    // des_encrypt(key, plaintext.c_str(), ciphertext);
-
-    std::cout << "Ciphertext después de encriptar: " << ciphertext << std::endl;
+    des_encrypt(key, plaintext.c_str(), ciphertext);
 
     bool found = false;
     bool global_found = false;
 
-    // Ajustar el espacio de búsqueda para ser 10^key_length
-    uint64_t max_tries = 1;
-    for (int i = 0; i < key_length; i++) {
-        max_tries *= 10;
-    }
-
-    uint64_t keys_per_process = max_tries / size;
-    uint64_t start = rank * keys_per_process;
-    uint64_t end = (rank == size - 1) ? max_tries : (rank + 1) * keys_per_process;
-
-    // MPI_Bcast(ciphertext, 64, MPI_CHAR, 0, MPI_COMM_WORLD);
-
-    bruteforce(ciphertext, known_substring, key_length, rank, size, found, start, end);
+    bruteforce(ciphertext, known_substring, rank, size, found);
     MPI_Allreduce(&found, &global_found, 1, MPI_CXX_BOOL, MPI_LOR, MPI_COMM_WORLD);
 
     if (!global_found && rank == 0) {
