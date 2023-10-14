@@ -44,45 +44,36 @@ void bruteforce(const unsigned char *ciphertext, const unsigned char *known_subs
 
     std::cout << "Rank " << rank << " starting from " << start << " to " << end << std::endl;
 
-    #pragma omp parallel for
-    for (uint64_t i = start; i < end; i++) {
+    #pragma omp parallel
+    {
         unsigned char local_key[16]; // Cada hilo tiene su propia copia de la clave
         memcpy(local_key, key, 16); // Inicializa la clave local con la clave global
 
-        aes_decrypt(local_key, ciphertext, decryptedtext, sizeof(ciphertext));
+        #pragma omp for
+        for (uint64_t i = start; i < end; i++) {
+            aes_decrypt(local_key, ciphertext, decryptedtext, sizeof(ciphertext));
 
-        if (strstr(reinterpret_cast<const char*>(decryptedtext), reinterpret_cast<const char*>(known_substring)) != nullptr) {
-            #pragma omp critical
-            {
-                std::cout << "\nKey Found by Rank " << rank << ": ";
-                for (int j = 0; j < key_length; j++) {
-                    std::cout << (int)key[j] << " ";
-                }
-                std::cout << std::endl;
-                std::cout << "Decrypted Text: " << decryptedtext << std::endl;
+            if (strstr(reinterpret_cast<const char*>(decryptedtext), reinterpret_cast<const char*>(known_substring)) != nullptr) {
+                #pragma omp critical
+                {
+                    std::cout << "\nKey Found by Rank " << rank << ": ";
+                    for (int j = 0; j < key_length; j++) {
+                        std::cout << (int)key[j] << " ";
+                    }
+                    std::cout << std::endl;
+                    std::cout << "Decrypted Text: " << decryptedtext << std::endl;
 
-                // Signal other processes to stop
-                int flag = 1;
-                for (int p = 0; p < size; p++) {
-                    if (p != rank) {
-                        MPI_Send(&flag, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
+                    // Signal other processes to stop
+                    int flag = 1;
+                    for (int p = 0; p < size; p++) {
+                        if (p != rank) {
+                            MPI_Send(&flag, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
+                        }
                     }
                 }
             }
 
-            #pragma omp cancel
-        }
-
-        increment_key(key, key_length);
-
-        // Check for stop signal from other processes
-        MPI_Status status;
-        int recv_flag;
-        MPI_Iprobe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &recv_flag, &status);
-        if (recv_flag) {
-            MPI_Recv(&recv_flag, 1, MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD, &status);
-            std::cout << "Rank " << rank << " received stop signal from Rank " << status.MPI_SOURCE << std::endl;
-            #pragma omp cancel
+            increment_key(local_key, key_length);
         }
     }
 }
