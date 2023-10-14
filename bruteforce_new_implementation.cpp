@@ -5,6 +5,7 @@
 #include <cstring>
 #include <ctime>
 #include <mpi.h>
+#include <omp.h>
 
 void aes_encrypt(const unsigned char *key, const unsigned char *plaintext, unsigned char *ciphertext, size_t length) {
     AES_KEY aes_key;
@@ -43,27 +44,33 @@ void bruteforce(const unsigned char *ciphertext, const unsigned char *known_subs
 
     std::cout << "Rank " << rank << " starting from " << start << " to " << end << std::endl;
 
+    #pragma omp parallel for
     for (uint64_t i = start; i < end; i++) {
+        unsigned char local_key[16]; // Cada hilo tiene su propia copia de la clave
+        memcpy(local_key, key, 16); // Inicializa la clave local con la clave global
 
-        aes_decrypt(key, ciphertext, decryptedtext, sizeof(ciphertext));
+        aes_decrypt(local_key, ciphertext, decryptedtext, sizeof(ciphertext));
 
         if (strstr(reinterpret_cast<const char*>(decryptedtext), reinterpret_cast<const char*>(known_substring)) != nullptr) {
-            std::cout << "\nKey Found by Rank " << rank << ": ";
-            for (int j = 0; j < key_length; j++) {
-                std::cout << (int)key[j] << " ";
-            }
-            std::cout << std::endl;
-            std::cout << "Decrypted Text: " << decryptedtext << std::endl;
+            #pragma omp critical
+            {
+                std::cout << "\nKey Found by Rank " << rank << ": ";
+                for (int j = 0; j < key_length; j++) {
+                    std::cout << (int)key[j] << " ";
+                }
+                std::cout << std::endl;
+                std::cout << "Decrypted Text: " << decryptedtext << std::endl;
 
-            // Signal other processes to stop
-            int flag = 1;
-            for (int p = 0; p < size; p++) {
-                if (p != rank) {
-                    MPI_Send(&flag, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
+                // Signal other processes to stop
+                int flag = 1;
+                for (int p = 0; p < size; p++) {
+                    if (p != rank) {
+                        MPI_Send(&flag, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
+                    }
                 }
             }
 
-            break;
+            #pragma omp cancel
         }
 
         increment_key(key, key_length);
@@ -75,7 +82,7 @@ void bruteforce(const unsigned char *ciphertext, const unsigned char *known_subs
         if (recv_flag) {
             MPI_Recv(&recv_flag, 1, MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD, &status);
             std::cout << "Rank " << rank << " received stop signal from Rank " << status.MPI_SOURCE << std::endl;
-            break;
+            #pragma omp cancel
         }
     }
 }

@@ -37,11 +37,6 @@ void bruteforce(const char *ciphertext, const char *known_substring, int key_len
 
     for (uint64_t i = 0; i < max_tries; i++) {
         des_decrypt(key, ciphertext, decryptedtext);
-        // std::cout << "Llave Probada: ";
-        // for (int j = 0; j < key_length; j++) {
-        //     std::cout << (int)key[j] << " ";
-        // }
-        // std::cout << " - Texto Descifrado: " << decryptedtext << std::endl;
 
         if (strstr(decryptedtext, known_substring) != nullptr) {
             std::cout << "\nLlave encontrada: ";
